@@ -1,8 +1,8 @@
 ﻿/*:
 -------------------------------------------------------------------------
-@title 未使用メディアデータ移動プラグイン
+@title 未使用メディアデータ移動プラグイン(ver.1.01)
 @author galanti
-@date 2015/11/13
+@date 2015/11/23
 -------------------------------------------------------------------------
 @plugindesc ゲームで未使用の音声、画像をunusedフォルダに移動させます。元の位置に復元もできます。
 
@@ -52,7 +52,8 @@ RPGツクールMVではランタイムパッケージ(RTP)が廃止され、デ�
 自己責任でお使いください。
 
 ○　更新情報
-2015/11/13 10 ver.1.0
+2015/11/13 ver.1.0
+2015/11/23 ver.1.01 マップデータのキャラクターチップが検出できないバグ修正
  
 ○　使用法
 プラグイン管理、パラメータの項目で実行したい項目を「1」にしてください。
@@ -77,11 +78,11 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 
 (function($){
 	$.parameters = PluginManager.parameters("galaPIMoveUnusedFiles");
-	$.isAudioCheck = parseInt($.parameters['Check Sounds']);
-	$.isImageCheck = parseInt($.parameters['Check Images']);
-	$.isanimCheck = parseInt($.parameters['Check Animations']);
-	$.isPluginCheck = parseInt($.parameters['Search In Plugins']);
-	$.isRecover = parseInt($.parameters['Recover All']);
+	$.isAudioCheck = Number($.parameters['Check Sounds']);
+	$.isImageCheck = Number($.parameters['Check Images']);
+	$.isanimCheck = Number($.parameters['Check Animations']);
+	$.isPluginCheck = Number($.parameters['Search In Plugins']);
+	$.isRecover = Number($.parameters['Recover All']);
 	$.scriptText = "";
 	$.audioPath = []; $.audioUnusedPath = [];
 	$.imagePath = []; $.imageUnusedPath = [];
@@ -91,17 +92,15 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 	$.animList = []; $.animUnusedLists = [];
 	$.fs = require('fs');
 	
+	//本体
 	$.moveUnused = function(){
-		//すべてのパスを取得しておく
-		$.registerFilePaths();
-		//unusedフォルダを作る
-		$.makeUnusedFolders();
+		$.registerFilePaths();		//すべてのパスを取得しておく
+		$.makeUnusedFolders();		//unusedフォルダを作る
 		if($.isRecover){
 			$.recoverAllFiles();
 			return;
 		}
 		$.moveUnusedFiles();
-
 		if($.isanimCheck){
 			$.showUnusedAnimations();
 		}
@@ -165,69 +164,56 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 		trim = (typeof trim !== 'undefined')? trim : true;
 		var tmplist = []; var list = [];
 		var i,j;
-		switch (mode){
-			case 'audio':
-				for (i = 0; i < path.length; i++){
-					list[i] = [];
-					tmplist = $.fs.readdirSync(path[i]);
-					tmplist.forEach(function(file){
-						if(!$.fs.statSync(path[i]+file).isDirectory()){
-							list[i].push(file);
-						}
-					});
-					//oggとm4aがあるのでまとめる
+		for (i = 0; i < path.length; i++){
+			list[i] = [];
+			tmplist = $.fs.readdirSync(path[i]);
+			tmplist.forEach(function(file){
+				if(!$.fs.statSync(path[i]+file).isDirectory()){
 					if(trim){
-						for (j = 0; j < list[i].length; j++){
-							list[i][j] = list[i][j].slice(0,-4);
-						}
-						list[i] = list[i].filter(function (x, j, self) {
-    						return self.indexOf(x) === j;
-	  					});
-	  				}
-				}
-				return list;
-			case 'image':
-				for (i = 0; i < path.length; i++){
-					list[i] = [];
-					tmplist = $.fs.readdirSync(path[i]);
-					tmplist.forEach(function(file){
-						if(!$.fs.statSync(path[i]+file).isDirectory()){
-							list[i].push(file);
-						}
-					});
-					if(trim){
-						for (j = 0; j < list[i].length; j++){
-							list[i][j] = list[i][j].slice(0,-4);
-						}
+						file = file.slice(0,-4);
 					}
+					list[i].push(file);
 				}
-				return list;
-			default:
-				return;
+			});
+			if(mode === 'audio'){	//oggとm4aがあるのでまとめる
+				list[i] = list[i].filter($.uniq);
+ 			}
 		}
+		return list;
+	};
+
+
+	//使用ファイル記録用の配列を準備
+	$.prepareUsedDataList = function(num){
+		array = [];
+		for (var i = 0; i < num; i++){
+			array[i] = [];
+		}
+		return array;
+	};
+
+
+	//uniq関数
+	$.uniq = function(x, j, self){
+		return self.indexOf(x) === j;
 	};
 
 
 	//ゲーム中使用されない音声、画像素材をすべて移動させます。
 	$.moveUnusedFiles = function(){
+		//使用ファイル記録用配列と今存在するファイルのリストを作成
 		if($.isAudioCheck){
-			$.usedAudioData = [];
-			for (var i = 0; i < 4; i++){
-				$.usedAudioData[i] = [];
-			}
+			$.usedAudioData = $.prepareUsedDataList(4);
 			$.audioLists = $.getFileLists('audio',$.audioPath);
 		}
 		if($.isImageCheck){
-			$.usedImageData = [];
-			for (var i = 0; i < 12; i++){
-				$.usedImageData[i] = [];
-			}
+			$.usedImageData = $.prepareUsedDataList(12);
 			$.imageLists = $.getFileLists('image',$.imagePath);
-
-			$.checkActorsImage();//アクターデータ
-			$.checkEnemiesImage(); //敵データ
-			$.checkTilesetsImage(); //タイルセットデータ
 		}
+		//チェックスタート
+		$.checkActorsImage($.isImageCheck);//アクターデータ
+		$.checkEnemiesImage($.isImageCheck); //敵データ
+		$.checkTilesetsImage($.isImageCheck); //タイルセットデータ
 		$.checkTroops($.isAudioCheck,$.isImageCheck);
 		$.checkAnimations($.isAudioCheck,$.isImageCheck);　//アニメーションデータ
 		$.checkCommonEvents($.isAudioCheck,$.isImageCheck);　//コモンイベントデータ
@@ -239,18 +225,14 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 		//これまで得た情報を元に音声ファイルを移動。
 		if($.isAudioCheck){
 			for(i = 0; i < $.usedAudioData.length; i++){
-				$.usedAudioData[i] = $.usedAudioData[i].filter(function (x, j, self) {
-    				return self.indexOf(x) === j;
-	  			});
+				$.usedAudioData[i] = $.usedAudioData[i].filter($.uniq);
 			}
 			$.moveAudioFiles();
 		}
 		//これまで得た情報を元に画像ファイルを移動。
 		if($.isImageCheck){
 			for(i = 0; i < $.usedImageData.length; i++){
-				$.usedImageData[i] = $.usedImageData[i].filter(function (x, j, self) {
-    				return self.indexOf(x) === j;
-	  			});
+				$.usedImageData[i] = $.usedImageData[i].filter($.uniq);
 			}
 			$.moveImageFiles();
 		}
@@ -258,7 +240,8 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 
 
 	//アクターの画像をチェック
-	$.checkActorsImage = function(){
+	$.checkActorsImage = function(isIm){
+		if(!isIm){ return; }
 		$dataActors.forEach(function(actor){
 			if(actor){
 				if(actor.battlerName != ""){
@@ -276,7 +259,8 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 
 
 	//敵の画像をチェック
-	$.checkEnemiesImage = function(){
+	$.checkEnemiesImage = function(isIm){
+		if(!isIm){ return; }
 		$dataEnemies.forEach(function(enemy){
 			if(enemy){
 				if(enemy.battlerName != ""){
@@ -288,7 +272,8 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 
 
 	//タイルセットの画像をチェック
-	$.checkTilesetsImage = function(){
+	$.checkTilesetsImage = function(isIm){
+		if(!isIm){ return; }
 		$dataTilesets.forEach(function(tset){
 			if(tset){
 				tset.tilesetNames.forEach(function(tile){
@@ -401,65 +386,77 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 	//システム設定をチェック
 	$.checkSystem = function(isAu, isIm){
 		if(isAu){
-			if($dataSystem.airship.bgm.name !== ""){
-				$.usedAudioData[0].push($dataSystem.airship.bgm.name);
-			}
-			if($dataSystem.battleBgm.name !== ""){
-				$.usedAudioData[0].push($dataSystem.battleBgm.name);
-			}
-			if($dataSystem.boat.bgm.name !== ""){
-				$.usedAudioData[0].push($dataSystem.boat.bgm.name);
-			}
-			if($dataSystem.defeatMe.name !== ""){
-				$.usedAudioData[3].push($dataSystem.defeatMe.name);
-			}
-			if($dataSystem.gameoverMe.name !== ""){
-				$.usedAudioData[3].push($dataSystem.gameoverMe.name);
-			}
-			if($dataSystem.ship.bgm.name !== ""){
-				$.usedAudioData[0].push($dataSystem.ship.bgm.name);
-			}
-			$dataSystem.sounds.forEach(function(sound){
-				if(sound.name !== ""){
-	  				$.usedAudioData[2].push(sound.name);
-				}
-			});
-			if($dataSystem.titleBgm.name !== ""){
-				$.usedAudioData[0].push($dataSystem.titleBgm.name);
-			}
-			if($dataSystem.victoryMe.name !== ""){
-				$.usedAudioData[3].push($dataSystem.victoryMe.name);
-			}
+			$.checkSystemAudio();
 		}
 		if(isIm){
-			if($dataSystem.airship.characterName != ""){
-				$.usedImageData[2].push($dataSystem.airship.characterName); //characters
-			}
-			if($dataSystem.boat.characterName != ""){
-				$.usedImageData[2].push($dataSystem.boat.characterName); //characters
-			}
-			if($dataSystem.ship.characterName != ""){
-				$.usedImageData[2].push($dataSystem.ship.characterName); //characters
-			}
-			if($dataSystem.battleback1Name != ""){
-				$.usedImageData[0].push($dataSystem.battleback1Name); //battlebacks1
-			}
-			if($dataSystem.battleback2Name != ""){
-				$.usedImageData[1].push($dataSystem.battleback2Name); //battlebacks1
-			}
-			if($dataSystem.battlerName != ""){
-				$.usedImageData[4].push($dataSystem.battlerName); //enemies
-			}
-			if($dataSystem.title1Name != ""){
-				$.usedImageData[10].push($dataSystem.title1Name); //titles1
-			}
-			if($dataSystem.title2Name != ""){
-				$.usedImageData[11].push($dataSystem.title2Name); //titles2
-			}
+			$.checkSystemImage();
 		}
 	};
 
 
+	//システム設定内の音声をチェック
+	$.checkSystemAudio = function(){
+		if($dataSystem.airship.bgm.name !== ""){
+			$.usedAudioData[0].push($dataSystem.airship.bgm.name);
+		}
+		if($dataSystem.battleBgm.name !== ""){
+			$.usedAudioData[0].push($dataSystem.battleBgm.name);
+		}
+		if($dataSystem.boat.bgm.name !== ""){
+			$.usedAudioData[0].push($dataSystem.boat.bgm.name);
+		}
+		if($dataSystem.defeatMe.name !== ""){
+			$.usedAudioData[3].push($dataSystem.defeatMe.name);
+		}
+		if($dataSystem.gameoverMe.name !== ""){
+			$.usedAudioData[3].push($dataSystem.gameoverMe.name);
+		}
+		if($dataSystem.ship.bgm.name !== ""){
+			$.usedAudioData[0].push($dataSystem.ship.bgm.name);
+		}
+		$dataSystem.sounds.forEach(function(sound){
+			if(sound.name !== ""){
+  				$.usedAudioData[2].push(sound.name);
+			}
+		});
+		if($dataSystem.titleBgm.name !== ""){
+			$.usedAudioData[0].push($dataSystem.titleBgm.name);
+		}
+		if($dataSystem.victoryMe.name !== ""){
+			$.usedAudioData[3].push($dataSystem.victoryMe.name);
+		}
+	};
+	
+	
+	//システム設定内の画像をチェック
+	$.checkSystemImage = function(){
+		if($dataSystem.airship.characterName != ""){
+			$.usedImageData[2].push($dataSystem.airship.characterName); //characters
+		}
+		if($dataSystem.boat.characterName != ""){
+			$.usedImageData[2].push($dataSystem.boat.characterName); //characters
+		}
+		if($dataSystem.ship.characterName != ""){
+			$.usedImageData[2].push($dataSystem.ship.characterName); //characters
+		}
+		if($dataSystem.battleback1Name != ""){
+			$.usedImageData[0].push($dataSystem.battleback1Name); //battlebacks1
+		}
+		if($dataSystem.battleback2Name != ""){
+			$.usedImageData[1].push($dataSystem.battleback2Name); //battlebacks1
+		}
+		if($dataSystem.battlerName != ""){
+			$.usedImageData[4].push($dataSystem.battlerName); //enemies
+		}
+		if($dataSystem.title1Name != ""){
+			$.usedImageData[10].push($dataSystem.title1Name); //titles1
+		}
+		if($dataSystem.title2Name != ""){
+			$.usedImageData[11].push($dataSystem.title2Name); //titles2
+		}
+	};
+	
+	
 	//全マップに含まれるデータとイベントをチェック
 	$.checkMaps = function(isAu, isIm){
 		var presentMaps = [];
@@ -491,19 +488,25 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 				}
 			}
 			//イベント
-			$dataMap.events.forEach(function(event){
-				if(event){
-					event.pages.forEach(function(page){
-						if(page.image.characterName !== ""){
-							$.usedImageData[2].push(page.image.characterName)
-						}
-						page.list.forEach(function(act){
-							if(isAu){ $.checkEventAudio(act); }
-							if(isIm){ $.checkEventImage(act); }
-						});
+			$.checkMapEvents(isAu,isIm);
+		});
+	};
+	
+	
+	//現在開いているマップデータ内のすべてのイベントをチェック
+	$.checkMapEvents = function(isAu,isIm){
+		$dataMap.events.forEach(function(event){
+			if(event){
+				event.pages.forEach(function(page){
+					if(page.image.characterName !== ""){
+						$.usedImageData[2].push(page.image.characterName)
+					}
+					page.list.forEach(function(act){
+						if(isAu){ $.checkEventAudio(act); }
+						if(isIm){ $.checkEventImage(act); }
 					});
-				}
-			});
+				});
+			}
 		});
 	};
 
@@ -650,9 +653,7 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 		//プラグイン内は調べません
 		
 		//これまで得た情報を元にリストを作成、表示。
-		$.usedAnimData = $.usedAnimData.filter(function (x, j, self) {
-   			return self.indexOf(x) === j;
-  		});
+		$.usedAnimData = $.usedAnimData.filter($.uniq);
 		$.usedAnimData.sort(function(a,b){
         	if( a < b ) return -1;
         	if( a > b ) return 1;
@@ -731,9 +732,7 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 	$.checkCommonAnim = function(){
 		$dataCommonEvents.forEach(function(event){
 			if(event){
-				event.list.forEach(function(act){
-					$.checkEventAnim(act);
-				});
+				$.checkEventAnim(event);
 			}
 		});
 	};
@@ -754,9 +753,7 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 			$dataMap.events.forEach(function(event){
 				if(event){
 					event.pages.forEach(function(page){
-						page.list.forEach(function(act){
-							$.checkEventAnim(act);
-						});
+						$.checkEventAnim(page);
 					});
 				}
 			});
@@ -765,10 +762,12 @@ galaPI.moveUnusedMaterials = galaPI.moveUnusedMaterials || {};
 
 
 	//アニメーションイベントをチェック
-	$.checkEventAnim = function(act){
-		if(act.code == 212 && act.parameters[1] > 0){
-			$.usedAnimData.push(act.parameters[1]);
-		}
+	$.checkEventAnim = function(event){
+		event.list.forEach(function(act){
+			if(act.code == 212 && act.parameters[1] > 0){
+				$.usedAnimData.push(act.parameters[1]);
+			}
+		});
 	};
 
 
